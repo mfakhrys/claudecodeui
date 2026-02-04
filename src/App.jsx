@@ -809,6 +809,7 @@ function AppContent() {
                 isPWA={isPWA}
                 isMobile={isMobile}
                 onToggleSidebar={() => setSidebarVisible(false)}
+                processingSessions={processingSessions}
               />
             ) : (
               /* Collapsed Sidebar */
@@ -904,6 +905,7 @@ function AppContent() {
               isPWA={isPWA}
               isMobile={isMobile}
               onToggleSidebar={() => setSidebarVisible(false)}
+              processingSessions={processingSessions}
             />
           </div>
         </div>

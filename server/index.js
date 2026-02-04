@@ -779,6 +779,68 @@ app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) 
     }
 });
 
+// Open file in VSCode endpoint
+app.post('/api/open-in-vscode', authenticateToken, async (req, res) => {
+    try {
+        const { filePath } = req.body;
+
+        if (!filePath) {
+            return res.status(400).json({ error: 'File path is required' });
+        }
+
+        // Resolve the file path to ensure it's valid
+        const resolvedPath = path.resolve(filePath);
+
+        // Check if file exists
+        try {
+            await fsPromises.access(resolvedPath);
+        } catch (e) {
+            return res.status(404).json({ error: `File not found: ${resolvedPath}` });
+        }
+
+        // Use the 'code' command to open the file in VSCode
+        // This uses the installed VSCode CLI (available when VSCode is installed)
+        const { exec } = await import('child_process');
+        const util = await import('util');
+        const execPromise = util.promisify(exec);
+
+        // Try different methods to open in VSCode
+        const commands = [
+            `code --goto "${resolvedPath}"`,  // Standard VSCode CLI
+            `code "${resolvedPath}"`,         // Fallback
+            `/usr/local/bin/code "${resolvedPath}"` // macOS path fallback
+        ];
+
+        let success = false;
+        let lastError = null;
+
+        for (const cmd of commands) {
+            try {
+                await execPromise(cmd, { timeout: 5000 });
+                success = true;
+                console.log(`[INFO] Opened file in VSCode: ${resolvedPath}`);
+                break;
+            } catch (error) {
+                lastError = error;
+                // Try next command
+            }
+        }
+
+        if (!success) {
+            console.warn('[WARN] VSCode CLI not found, file not opened:', lastError?.message);
+            return res.status(404).json({
+                error: 'VSCode CLI not found. Please ensure VSCode is installed and the "code" command is available in your PATH.',
+                hint: 'Install VSCode command line tools: From VSCode, press Cmd+Shift+P, type "shell command", and select "Install \'code\' command in PATH"'
+            });
+        }
+
+        res.json({ success: true, path: resolvedPath });
+    } catch (error) {
+        console.error('[ERROR] Error opening file in VSCode:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // WebSocket connection handler that routes based on URL path
 wss.on('connection', (ws, request) => {
     const url = request.url;

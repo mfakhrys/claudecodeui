@@ -448,11 +448,12 @@ const CodeBlock = ({ node, inline, className, children, ...props }) => {
             margin: 0,
             borderRadius: '0.5rem',
             fontSize: '0.875rem',
+            fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
             padding: language && language !== 'text' ? '2rem 1rem 1rem 1rem' : '1rem',
           }}
           codeTagProps={{
             style: {
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+              fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
             }
           }}
         >
@@ -1889,6 +1890,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
   const [totalMessages, setTotalMessages] = useState(0);
   const MESSAGES_PER_PAGE = 20;
   const [isSystemSessionChange, setIsSystemSessionChange] = useState(false);
+  const isSystemSessionChangeRef = useRef(false); // Ref to avoid race condition with state updates
   const [permissionMode, setPermissionMode] = useState('default');
   // In-memory queue of tool permission prompts for the current UI view.
   // These are not persisted and do not survive a page refresh; introduced so
@@ -1922,6 +1924,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
   const [cursorPosition, setCursorPosition] = useState(0);
   const [atSymbolPosition, setAtSymbolPosition] = useState(-1);
   const [canAbortSession, setCanAbortSession] = useState(false);
+  const [messageQueue, setMessageQueue] = useState([]); // Queue messages when agent is processing
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
   const scrollPositionRef = useRef({ height: 0, top: 0 });
   const [showCommandMenu, setShowCommandMenu] = useState(false);
@@ -3032,7 +3035,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
         const sessionChanged = currentSessionId !== null && currentSessionId !== selectedSession.id;
 
         if (sessionChanged) {
-          if (!isSystemSessionChange) {
+          if (!isSystemSessionChange && !isSystemSessionChangeRef.current) {
             // Clear any streaming leftovers from the previous session
             resetStreamingState();
             pendingViewSessionRef.current = null;
@@ -3092,14 +3095,15 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
           } else {
             // Reset the flag after handling system session change
             setIsSystemSessionChange(false);
+            isSystemSessionChangeRef.current = false;
           }
         } else {
           // For Claude, load messages normally with pagination
           setCurrentSessionId(selectedSession.id);
-          
+
           // Only load messages from API if this is a user-initiated session change
           // For system-initiated changes, preserve existing messages and rely on WebSocket
-          if (!isSystemSessionChange) {
+          if (!isSystemSessionChange && !isSystemSessionChangeRef.current) {
             const messages = await loadSessionMessages(selectedProject.name, selectedSession.id, false, selectedSession.__provider || 'claude');
             setSessionMessages(messages);
             // convertedMessages will be automatically updated via useMemo
@@ -3107,11 +3111,12 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
           } else {
             // Reset the flag after handling system session change
             setIsSystemSessionChange(false);
+            isSystemSessionChangeRef.current = false;
           }
         }
       } else {
         // New session view (no selected session) - always reset UI state
-        if (!isSystemSessionChange) {
+        if (!isSystemSessionChange && !isSystemSessionChangeRef.current) {
           resetStreamingState();
           pendingViewSessionRef.current = null;
           setChatMessages([]);
@@ -3183,11 +3188,15 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
   }, [selectedSession?.id]);
 
   // Update chatMessages when convertedMessages changes
+  // Only update if we have session messages AND either:
+  // 1. We're not loading (normal case), OR
+  // 2. We're loading but chatMessages is shorter than convertedMessages (session switch case)
+  // This prevents clearing user's new message that hasn't been saved to session yet
   useEffect(() => {
-    if (sessionMessages.length > 0) {
+    if (sessionMessages.length > 0 && (!isLoading || chatMessages.length < convertedMessages.length)) {
       setChatMessages(convertedMessages);
     }
-  }, [convertedMessages, sessionMessages]);
+  }, [convertedMessages, sessionMessages, isLoading, chatMessages.length]);
 
   // Notify parent when input focus changes
   useEffect(() => {
@@ -3330,6 +3339,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
             
             // Mark as system change to prevent clearing messages when session ID updates
             setIsSystemSessionChange(true);
+            isSystemSessionChangeRef.current = true;
             
             // Session Protection: Replace temporary "new-session-*" identifier with real session ID
             // This maintains protection continuity - no gap between temp ID and real ID
@@ -3434,6 +3444,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
             // Mark this as a system-initiated session change to preserve messages
             // This works exactly like new session init - messages stay visible during navigation
             setIsSystemSessionChange(true);
+            isSystemSessionChangeRef.current = true;
             
             // Switch to the new session using React Router navigation
             // This triggers the session loading logic in App.jsx without a page reload
@@ -3456,6 +3467,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
             
             // Mark this as a system-initiated session change to preserve messages
             setIsSystemSessionChange(true);
+            isSystemSessionChangeRef.current = true;
             
             // Switch to the new session
             if (onNavigateToSession) {
@@ -3645,6 +3657,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
               if (currentSessionId && cdata.session_id !== currentSessionId) {
                 console.log('🔄 Cursor session switch detected:', { originalSession: currentSessionId, newSession: cdata.session_id });
                 setIsSystemSessionChange(true);
+                isSystemSessionChangeRef.current = true;
                 if (onNavigateToSession) {
                   onNavigateToSession(cdata.session_id);
                 }
@@ -3654,6 +3667,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
               if (!currentSessionId) {
                 console.log('🔄 Cursor new session init detected:', { newSession: cdata.session_id });
                 setIsSystemSessionChange(true);
+                isSystemSessionChangeRef.current = true;
                 if (onNavigateToSession) {
                   onNavigateToSession(cdata.session_id);
                 }
@@ -3958,6 +3972,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
           if (codexPendingSessionId && !currentSessionId) {
             setCurrentSessionId(codexActualSessionId);
             setIsSystemSessionChange(true);
+            isSystemSessionChangeRef.current = true;
             if (onNavigateToSession) {
               onNavigateToSession(codexActualSessionId);
             }
@@ -4407,36 +4422,27 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
     noKeyboard: true
   });
 
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading || !selectedProject) return;
-
-    // Apply thinking mode prefix if selected
-    let messageContent = input;
-    const selectedThinkingMode = thinkingModes.find(mode => mode.id === thinkingMode);
-    if (selectedThinkingMode && selectedThinkingMode.prefix) {
-      messageContent = `${selectedThinkingMode.prefix}: ${input}`;
-    }
-
+  // Function to actually send a message (extracted so it can be called for queued messages)
+  const sendMessageInternal = useCallback(async (messageContent, imagesToUpload, currentSessionIdOverride) => {
     // Upload images first if any
     let uploadedImages = [];
-    if (attachedImages.length > 0) {
+    if (imagesToUpload.length > 0) {
       const formData = new FormData();
-      attachedImages.forEach(file => {
+      imagesToUpload.forEach(file => {
         formData.append('images', file);
       });
-      
+
       try {
         const response = await authenticatedFetch(`/api/projects/${selectedProject.name}/upload-images`, {
           method: 'POST',
           headers: {}, // Let browser set Content-Type for FormData
           body: formData
         });
-        
+
         if (!response.ok) {
           throw new Error('Failed to upload images');
         }
-        
+
         const result = await response.json();
         uploadedImages = result.images;
       } catch (error) {
@@ -4446,13 +4452,13 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
           content: `Failed to upload images: ${error.message}`,
           timestamp: new Date()
         }]);
-        return;
+        return false;
       }
     }
 
     const userMessage = {
       type: 'user',
-      content: input,
+      content: messageContent.replace(/^(extended|deep|auto):\s*/, ''), // Remove thinking mode prefix for display
       images: uploadedImages,
       timestamp: new Date()
     };
@@ -4466,13 +4472,13 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
       tokens: 0,
       can_interrupt: true
     });
-    
+
     // Always scroll to bottom when user sends a message and reset scroll state
     setIsUserScrolledUp(false); // Reset scroll state so auto-scroll works for Claude's response
     setTimeout(() => scrollToBottom(), 100); // Longer delay to ensure message is rendered
 
     // Determine effective session id for replies to avoid race on state updates
-    const effectiveSessionId = currentSessionId || selectedSession?.id || sessionStorage.getItem('cursorSessionId');
+    const effectiveSessionId = currentSessionIdOverride || currentSessionId || selectedSession?.id || sessionStorage.getItem('cursorSessionId');
 
     // Session Protection: Mark session as active to prevent automatic project updates during conversation
     // Use existing session if available; otherwise a temporary placeholder until backend provides real ID
@@ -4557,6 +4563,72 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
       });
     }
 
+    return true;
+  }, [selectedProject, currentSessionId, selectedSession, provider, permissionMode, onSessionActive, cursorModel, claudeModel, codexModel, sendMessage, setChatMessages, setIsLoading, setCanAbortSession, setClaudeStatus, setIsUserScrolledUp, scrollToBottom]);
+
+  // Process queued messages
+  useEffect(() => {
+    if (!isLoading && messageQueue.length > 0 && selectedProject) {
+      // Find the first message queued for the current session
+      const messageForCurrentSession = messageQueue.find(m => m.sessionId === currentSessionId);
+
+      if (messageForCurrentSession) {
+        // Remove this specific message from the queue
+        setMessageQueue(prev => prev.filter(m => m !== messageForCurrentSession));
+
+        // Apply thinking mode prefix if needed
+        let messageContent = messageForCurrentSession.content;
+        const selectedThinkingMode = thinkingModes.find(mode => mode.id === messageForCurrentSession.thinkingMode);
+        if (selectedThinkingMode && selectedThinkingMode.prefix) {
+          messageContent = `${selectedThinkingMode.prefix}: ${messageContent}`;
+        }
+
+        sendMessageInternal(messageContent, messageForCurrentSession.images, messageForCurrentSession.sessionId);
+      }
+    }
+  }, [isLoading, messageQueue, selectedProject, currentSessionId, sendMessageInternal]);
+
+  const handleSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    if (!input.trim() || !selectedProject) return;
+
+    // Apply thinking mode prefix if selected
+    let messageContent = input;
+    const selectedThinkingMode = thinkingModes.find(mode => mode.id === thinkingMode);
+    if (selectedThinkingMode && selectedThinkingMode.prefix) {
+      messageContent = `${selectedThinkingMode.prefix}: ${input}`;
+    }
+
+    // If currently loading, queue the message instead of sending immediately
+    // Store the sessionId so the message is sent to the correct conversation
+    if (isLoading) {
+      setMessageQueue(prev => [...prev, {
+        content: input,
+        images: [...attachedImages],
+        thinkingMode: thinkingMode,
+        sessionId: currentSessionId, // Store current session ID
+        timestamp: Date.now()
+      }]);
+      setInput('');
+      setAttachedImages([]);
+      setUploadingImages(new Map());
+      setImageErrors(new Map());
+      setIsTextareaExpanded(false);
+      setThinkingMode('none');
+
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+
+      // Clear the saved draft since message was queued
+      safeLocalStorage.removeItem(`draft_input_${selectedProject.name}`);
+      return;
+    }
+
+    // Not loading - send immediately using the extracted function
+    await sendMessageInternal(messageContent, attachedImages, null);
+
     setInput('');
     setAttachedImages([]);
     setUploadingImages(new Map());
@@ -4570,10 +4642,8 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
     }
 
     // Clear the saved draft since message was sent
-    if (selectedProject) {
-      safeLocalStorage.removeItem(`draft_input_${selectedProject.name}`);
-    }
-  }, [input, isLoading, selectedProject, attachedImages, currentSessionId, selectedSession, provider, permissionMode, onSessionActive, cursorModel, claudeModel, codexModel, sendMessage, setInput, setAttachedImages, setUploadingImages, setImageErrors, setIsTextareaExpanded, textareaRef, setChatMessages, setIsLoading, setCanAbortSession, setClaudeStatus, setIsUserScrolledUp, scrollToBottom, thinkingMode]);
+    safeLocalStorage.removeItem(`draft_input_${selectedProject.name}`);
+  }, [input, isLoading, selectedProject, attachedImages, thinkingMode, sendMessageInternal]);
 
   const handleGrantToolPermission = useCallback((suggestion) => {
     if (!suggestion || provider !== 'claude') {
@@ -5208,7 +5278,54 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
             })}
           </>
         )}
-        
+
+        {/* Queued messages indicator - shows messages queued for the current session */}
+        {messageQueue.filter(m => m.sessionId === currentSessionId).length > 0 && (
+          <div className="space-y-2">
+            {messageQueue
+              .filter(m => m.sessionId === currentSessionId)
+              .map((queuedMsg, idx) => (
+                <div key={`queued-${idx}`} className="chat-message user flex justify-end px-3 sm:px-0">
+                  <div className="flex items-end space-x-0 sm:space-x-3 w-full sm:w-auto sm:max-w-[85%] md:max-w-md lg:max-w-lg xl:max-w-xl">
+                    <div className="bg-blue-400/30 dark:bg-blue-500/30 border-2 border-dashed border-blue-400 dark:border-blue-500 text-gray-700 dark:text-gray-200 rounded-2xl rounded-br-md px-3 sm:px-4 py-2 shadow-sm flex-1 sm:flex-initial">
+                      <div className="flex items-center space-x-2">
+                        <div className="animate-spin rounded-full h-3 w-3 border border-blue-500 border-t-transparent"></div>
+                        <span className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase">Queued</span>
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap break-words mt-1 opacity-80">
+                        {queuedMsg.content}
+                      </div>
+                      {queuedMsg.images && queuedMsg.images.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {queuedMsg.images.map((img, imgIdx) => (
+                            <div key={imgIdx} className="text-xs text-blue-500 dark:text-blue-400">
+                              📎 Image {imgIdx + 1}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* Banner indicating there are queued messages in OTHER sessions */}
+        {messageQueue.filter(m => m.sessionId !== currentSessionId).length > 0 && (
+          <div className="mx-3 sm:mx-0 mb-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 shadow-sm">
+            <div className="flex items-center space-x-2">
+              <div className="animate-spin rounded-full h-4 w-4 border border-amber-500 border-t-transparent"></div>
+              <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                {messageQueue.filter(m => m.sessionId !== currentSessionId).length} message{messageQueue.filter(m => m.sessionId !== currentSessionId).length > 1 ? 's' : ''} queued in other conversation{messageQueue.filter(m => m.sessionId !== currentSessionId).length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+              Switch back to that conversation to see them
+            </p>
+          </div>
+        )}
+
         {isLoading && (
           <div className="chat-message assistant">
             <div className="w-full">
@@ -5619,8 +5736,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
                 setIsTextareaExpanded(isExpanded);
               }}
               placeholder={t('input.placeholder', { provider: provider === 'cursor' ? t('messageTypes.cursor') : provider === 'codex' ? t('messageTypes.codex') : t('messageTypes.claude') })}
-              disabled={isLoading}
-              className="chat-input-placeholder block w-full pl-12 pr-20 sm:pr-40 py-1.5 sm:py-4 bg-transparent rounded-2xl focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 resize-none min-h-[50px] sm:min-h-[80px] max-h-[40vh] sm:max-h-[300px] overflow-y-auto text-base leading-6 transition-all duration-200"
+              className="chat-input-placeholder block w-full pl-12 pr-20 sm:pr-40 py-1.5 sm:py-4 bg-transparent rounded-2xl focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none min-h-[50px] sm:min-h-[80px] max-h-[40vh] sm:max-h-[300px] overflow-y-auto text-base leading-6 transition-all duration-200"
               style={{ height: '50px' }}
             />
             {/* Image upload button */}
@@ -5676,9 +5792,11 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, late
             <div className={`absolute bottom-1 left-12 right-14 sm:right-40 text-xs text-gray-400 dark:text-gray-500 pointer-events-none hidden sm:block transition-opacity duration-200 ${
               input.trim() ? 'opacity-0' : 'opacity-100'
             }`}>
-              {sendByCtrlEnter
-                ? t('input.hintText.ctrlEnter')
-                : t('input.hintText.enter')}
+              {messageQueue.length > 0
+                ? `${messageQueue.length} message${messageQueue.length > 1 ? 's' : ''} queued`
+                : sendByCtrlEnter
+                  ? t('input.hintText.ctrlEnter')
+                  : t('input.hintText.enter')}
             </div>
             </div>
           </div>

@@ -6,12 +6,18 @@ import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
+import { rust } from '@codemirror/lang-rust';
+import { cpp } from '@codemirror/lang-cpp';
+import { java } from '@codemirror/lang-java';
+import { php } from '@codemirror/lang-php';
+import { sql } from '@codemirror/lang-sql';
+import { xml } from '@codemirror/lang-xml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView, showPanel, ViewPlugin } from '@codemirror/view';
 import { unifiedMergeView, getChunks } from '@codemirror/merge';
 import { showMinimap } from '@replit/codemirror-minimap';
-import { X, Save, Download, Maximize2, Minimize2 } from 'lucide-react';
-import { api } from '../utils/api';
+import { X, Save, Download, Maximize2, Minimize2, ExternalLink } from 'lucide-react';
+import { api, authenticatedFetch } from '../utils/api';
 import { useTranslation } from 'react-i18next';
 
 function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded = false, onToggleExpand = null }) {
@@ -259,29 +265,122 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
   // Get language extension based on file extension
   const getLanguageExtension = (filename) => {
     const ext = filename.split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'js':
-      case 'jsx':
-      case 'ts':
-      case 'tsx':
-        return [javascript({ jsx: true, typescript: ext.includes('ts') })];
-      case 'py':
-        return [python()];
-      case 'html':
-      case 'htm':
-        return [html()];
-      case 'css':
-      case 'scss':
-      case 'less':
-        return [css()];
-      case 'json':
-        return [json()];
-      case 'md':
-      case 'markdown':
-        return [markdown()];
-      default:
-        return [];
+
+    // Map file extensions to language support
+    const extensionMap = {
+      // JavaScript/TypeScript
+      'js': () => [javascript({ jsx: true, typescript: false })],
+      'jsx': () => [javascript({ jsx: true, typescript: false })],
+      'ts': () => [javascript({ jsx: true, typescript: true })],
+      'tsx': () => [javascript({ jsx: true, typescript: true })],
+      'mjs': () => [javascript({ jsx: true, typescript: false })],
+      'cjs': () => [javascript({ jsx: true, typescript: false })],
+
+      // Python
+      'py': () => [python()],
+      'pyi': () => [python()],
+      'pyw': () => [python()],
+
+      // HTML/XML
+      'html': () => [html()],
+      'htm': () => [html()],
+      'xhtml': () => [html()],
+      'svg': () => [html()],
+
+      // CSS/Stylesheets
+      'css': () => [css()],
+      'scss': () => [css()],
+      'sass': () => [css()],
+      'less': () => [css()],
+
+      // JSON/Data
+      'json': () => [json()],
+      'jsonc': () => [json()],
+
+      // Markdown
+      'md': () => [markdown()],
+      'markdown': () => [markdown()],
+      'mdx': () => [markdown()],
+
+      // XML
+      'xml': () => [xml()],
+
+      // Rust
+      'rs': () => [rust()],
+
+      // C/C++
+      'c': () => [cpp()],
+      'cpp': () => [cpp()],
+      'cc': () => [cpp()],
+      'cxx': () => [cpp()],
+      'h': () => [cpp()],
+      'hpp': () => [cpp()],
+      'hxx': () => [cpp()],
+
+      // Java
+      'java': () => [java()],
+
+      // PHP
+      'php': () => [php()],
+
+      // SQL
+      'sql': () => [sql()],
+
+      // Config/Text files - use markdown as fallback for basic highlighting
+      'yaml': () => [markdown()],
+      'yml': () => [markdown()],
+      'toml': () => [markdown()],
+      'txt': () => [markdown()],
+      'sh': () => [markdown()],
+      'bash': () => [markdown()],
+      'zsh': () => [markdown()],
+      'fish': () => [markdown()],
+      'rb': () => [markdown()], // Ruby
+      'go': () => [markdown()], // Go
+      'kt': () => [markdown()], // Kotlin
+      'swift': () => [markdown()], // Swift
+      'dart': () => [markdown()], // Dart
+      'r': () => [markdown()], // R
+      'lua': () => [markdown()], // Lua
+      'pl': () => [markdown()], // Perl
+      'pm': () => [markdown()], // Perl module
+      'vue': () => [html()], // Vue SFC
+      'svelte': () => [html()], // Svelte
+      'astro': () => [html()], // Astro
+      'htaccess': () => [markdown()],
+      'gitignore': () => [markdown()],
+      'env': () => [markdown()],
+      'conf': () => [markdown()],
+      'config': () => [markdown()],
+      'ini': () => [markdown()],
+      'props': () => [markdown()],
+      'properties': () => [markdown()],
+      'gradle': () => [markdown()],
+      'dockerfile': () => [markdown()],
+      'makefile': () => [markdown()],
+      'cmake': () => [markdown()],
+      'lock': () => [markdown()],
+    };
+
+    // Handle special filenames without extension
+    if (filename.toLowerCase() === 'dockerfile' || filename.toLowerCase().endsWith('dockerfile')) {
+      return [markdown()];
     }
+    if (filename.toLowerCase() === 'makefile' || filename.toLowerCase().endsWith('makefile')) {
+      return [markdown()];
+    }
+    if (filename.toLowerCase().startsWith('.env')) {
+      return [markdown()];
+    }
+    if (filename.toLowerCase().startsWith('.gitignore')) {
+      return [markdown()];
+    }
+    if (filename.toLowerCase().endsWith('.gitignore')) {
+      return [markdown()];
+    }
+
+    // Look up the extension and call the function, or return markdown as fallback
+    return extensionMap[ext]?.() ?? [markdown()];
   };
 
   // Load file content
@@ -373,6 +472,21 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleOpenInVSCode = async () => {
+    try {
+      // file.path is already the full path from the server
+      const fullPath = file.path;
+
+      await authenticatedFetch('/api/open-in-vscode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath: fullPath })
+      });
+    } catch (error) {
+      // Silent fail - VSCode may not be installed
+    }
   };
 
   const toggleFullscreen = () => {
@@ -553,6 +667,13 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
             opacity: 0.5;
             cursor: not-allowed;
           }
+
+          /* JetBrains Mono font for CodeMirror */
+          .cm-editor .cm-scroller,
+          .cm-editor .cm-content,
+          .cm-editor .cm-line {
+            font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+          }
         `}
       </style>
       <div className={isSidebar ?
@@ -591,6 +712,14 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
               title={t('actions.download')}
             >
               <Download className="w-5 h-5 md:w-4 md:h-4" />
+            </button>
+
+            <button
+              onClick={handleOpenInVSCode}
+              className="p-2 md:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
+              title="Open in VSCode"
+            >
+              <ExternalLink className="w-5 h-5 md:w-4 md:h-4" />
             </button>
 
             <button
@@ -668,6 +797,7 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
             height="100%"
             style={{
               fontSize: `${fontSize}px`,
+              fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
               height: '100%',
             }}
             basicSetup={{

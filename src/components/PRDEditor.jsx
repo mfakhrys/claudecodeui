@@ -3,7 +3,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView } from '@codemirror/view';
-import { X, Save, Download, Maximize2, Minimize2, Eye, FileText, Sparkles, AlertTriangle } from 'lucide-react';
+import { X, Save, Download, Maximize2, Minimize2, Eye, FileText, Sparkles, AlertTriangle, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api, authenticatedFetch } from '../utils/api';
 
@@ -455,6 +455,21 @@ This document outlines the requirements for building an AI-powered task manageme
     URL.revokeObjectURL(url);
   };
 
+  const handleOpenInVSCode = async () => {
+    try {
+      // file.path is already the full path from the server
+      const fullPath = file.path;
+
+      await authenticatedFetch('/api/open-in-vscode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath: fullPath })
+      });
+    } catch (error) {
+      // Silent fail - VSCode may not be installed
+    }
+  };
+
   const handleGenerateTasks = async () => {
     if (!content.trim()) {
       alert('Please add content to the PRD before generating tasks.');
@@ -628,7 +643,15 @@ This document outlines the requirements for building an AI-powered task manageme
             >
               <Download className="w-5 h-5 md:w-4 md:h-4" />
             </button>
-            
+
+            <button
+              onClick={handleOpenInVSCode}
+              className="p-2 md:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
+              title="Open in VSCode"
+            >
+              <ExternalLink className="w-5 h-5 md:w-4 md:h-4" />
+            </button>
+
             <button
               onClick={handleGenerateTasks}
               disabled={!content.trim()}
@@ -709,6 +732,7 @@ This document outlines the requirements for building an AI-powered task manageme
               height="100%"
               style={{
                 fontSize: '14px',
+                fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                 height: '100%',
               }}
               basicSetup={{

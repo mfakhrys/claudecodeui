@@ -64,7 +64,8 @@ function Sidebar({
   onShowVersionModal,
   isPWA,
   isMobile,
-  onToggleSidebar
+  onToggleSidebar,
+  processingSessions
 }) {
   const { t } = useTranslation('sidebar');
   const [expandedProjects, setExpandedProjects] = useState(new Set());
@@ -84,6 +85,7 @@ function Sidebar({
   const [deletingProjects, setDeletingProjects] = useState(new Set());
   const [deleteConfirmation, setDeleteConfirmation] = useState(null); // { project, sessionCount }
   const [sessionDeleteConfirmation, setSessionDeleteConfirmation] = useState(null); // { projectName, sessionId, sessionTitle, provider }
+  const [hasInteractedWithSessions, setHasInteractedWithSessions] = useState(false);
 
   // TaskMaster context
   const { setCurrentProject, mcpServerStatus } = useTaskMaster();
@@ -190,10 +192,11 @@ function Sidebar({
 
 
   const toggleProject = (projectName) => {
-    const newExpanded = new Set();
-    // If clicking the already-expanded project, collapse it (newExpanded stays empty)
-    // If clicking a different project, expand only that one
-    if (!expandedProjects.has(projectName)) {
+    const newExpanded = new Set(expandedProjects);
+    // Toggle: if expanded, remove it; if collapsed, add it
+    if (expandedProjects.has(projectName)) {
+      newExpanded.delete(projectName);
+    } else {
       newExpanded.add(projectName);
     }
     setExpandedProjects(newExpanded);
@@ -201,6 +204,7 @@ function Sidebar({
 
   // Wrapper to attach project context when session is clicked
   const handleSessionClick = (session, projectName) => {
+    setHasInteractedWithSessions(true);
     onSessionSelect({ ...session, __projectName: projectName });
   };
 
@@ -1067,9 +1071,10 @@ function Sidebar({
                                 {(() => {
                                   const sessionCount = getAllSessions(project).length;
                                   const hasMore = project.sessionMeta?.hasMore !== false;
-                                  return hasMore && sessionCount >= 5 ? `${sessionCount}+` : sessionCount;
+                                  const count = hasMore && sessionCount >= 5 ? `${sessionCount}+` : sessionCount;
+                                  return `${count} conversation${count === 1 ? '' : 's'}`;
                                 })()}
-                                {project.fullPath !== project.displayName && (
+                                {false && project.fullPath !== project.displayName && (
                                   <span className="ml-1 opacity-60" title={project.fullPath}>
                                     • {project.fullPath.length > 25 ? '...' + project.fullPath.slice(-22) : project.fullPath}
                                   </span>
@@ -1206,13 +1211,25 @@ function Sidebar({
                           };
                           const sessionTime = getSessionTime();
                           const messageCount = session.messageCount || 0;
-                          
+                          const isProcessing = processingSessions?.has(session.id);
+
                           return (
                           <div key={session.id} className="group relative">
-                            {/* Active session indicator dot */}
-                            {isActive && (
+                            {/* Active session indicator dot - hide once user has interacted with any session */}
+                            {!hasInteractedWithSessions && !isProcessing && isActive && (
                               <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1">
                                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                              </div>
+                            )}
+                            {/* Processing spinner - shows when agent is running */}
+                            {isProcessing && (
+                              <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1">
+                                <div className="w-3 h-3 text-blue-500 animate-spin">
+                                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"></circle>
+                                    <path fill="currentColor" className="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                </div>
                               </div>
                             )}
                             {/* Mobile Session Item */}
