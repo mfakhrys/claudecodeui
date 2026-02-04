@@ -1,22 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { ScrollArea } from './ui/scroll-area';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Input } from './ui/input';
 import { useTranslation } from 'react-i18next';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { ScrollArea } from './ui/scroll-area';
 
-import { FolderOpen, Folder, Plus, MessageSquare, Clock, ChevronDown, ChevronRight, Edit3, Check, X, Trash2, Settings, FolderPlus, RefreshCw, Sparkles, Edit2, Star, Search, AlertTriangle } from 'lucide-react';
-import { cn } from '../lib/utils';
-import ClaudeLogo from './ClaudeLogo';
-import CursorLogo from './CursorLogo.jsx';
-import CodexLogo from './CodexLogo.jsx';
-import TaskIndicator from './TaskIndicator';
-import ProjectCreationWizard from './ProjectCreationWizard';
-import { api } from '../utils/api';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Clock, Edit2, Edit3, Folder, FolderOpen, FolderPlus, MessageSquare, Plus, RefreshCw, Search, Settings, Star, Trash2, X } from 'lucide-react';
+import { IS_PLATFORM } from '../constants/config';
 import { useTaskMaster } from '../contexts/TaskMasterContext';
 import { useTasksSettings } from '../contexts/TasksSettingsContext';
-import { IS_PLATFORM } from '../constants/config';
+import { cn } from '../lib/utils';
+import { api } from '../utils/api';
+import ClaudeLogo from './ClaudeLogo';
+import CodexLogo from './CodexLogo.jsx';
+import CursorLogo from './CursorLogo.jsx';
+import ProjectCreationWizard from './ProjectCreationWizard';
+import TaskIndicator from './TaskIndicator';
 
 // Move formatTimeAgo outside component to avoid recreation on every render
 const formatTimeAgo = (dateString, currentTime, t) => {
@@ -91,7 +91,7 @@ function Sidebar({
   const { setCurrentProject, mcpServerStatus } = useTaskMaster();
   const { tasksEnabled } = useTasksSettings();
 
-  
+
   // Starred projects state - persisted in localStorage
   const [starredProjects, setStarredProjects] = useState(() => {
     try {
@@ -176,14 +176,14 @@ function Sidebar({
     };
 
     window.addEventListener('storage', handleStorageChange);
-    
+
     // Also check periodically when component is focused (for same-tab changes)
     const checkInterval = setInterval(() => {
       if (document.hasFocus()) {
         loadSortOrder();
       }
     }, 1000);
-    
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       clearInterval(checkInterval);
@@ -217,7 +217,7 @@ function Sidebar({
       newStarred.add(projectName);
     }
     setStarredProjects(newStarred);
-    
+
     // Persist to localStorage
     try {
       localStorage.setItem('starredProjects', JSON.stringify([...newStarred]));
@@ -251,13 +251,13 @@ function Sidebar({
     if (allSessions.length === 0) {
       return new Date(0); // Return epoch date for projects with no sessions
     }
-    
+
     // Find the most recent session activity
     const mostRecentDate = allSessions.reduce((latest, session) => {
       const sessionDate = new Date(session.lastActivity);
       return sessionDate > latest ? sessionDate : latest;
     }, new Date(0));
-    
+
     return mostRecentDate;
   };
 
@@ -265,11 +265,11 @@ function Sidebar({
   const sortedProjects = [...projects].sort((a, b) => {
     const aStarred = isProjectStarred(a.name);
     const bStarred = isProjectStarred(b.name);
-    
+
     // First, sort by starred status
     if (aStarred && !bStarred) return -1;
     if (!aStarred && bStarred) return 1;
-    
+
     // For projects with same starred status, sort by selected order
     if (projectSortOrder === 'date') {
       // Sort by most recent activity (descending)
@@ -309,7 +309,7 @@ function Sidebar({
     } catch (error) {
       console.error('Error renaming project:', error);
     }
-    
+
     setEditingProject(null);
     setEditingName('');
   };
@@ -440,7 +440,7 @@ function Sidebar({
   const loadMoreSessions = async (project) => {
     // Check if we can load more sessions
     const canLoadMore = project.sessionMeta?.hasMore !== false;
-    
+
     if (!canLoadMore || loadingSessions[project.name]) {
       return;
     }
@@ -450,10 +450,10 @@ function Sidebar({
     try {
       const currentSessionCount = (project.sessions?.length || 0) + (additionalSessions[project.name]?.length || 0);
       const response = await api.sessions(project.name, 5, currentSessionCount);
-      
+
       if (response.ok) {
         const result = await response.json();
-        
+
         // Store additional sessions locally
         setAdditionalSessions(prev => ({
           ...prev,
@@ -462,7 +462,7 @@ function Sidebar({
             ...result.sessions
           ]
         }));
-        
+
         // Update project metadata if needed
         if (result.hasMore === false) {
           // Mark that there are no more sessions to load
@@ -479,11 +479,11 @@ function Sidebar({
   // Filter projects based on search input
   const filteredProjects = sortedProjects.filter(project => {
     if (!searchFilter.trim()) return true;
-    
+
     const searchLower = searchFilter.toLowerCase();
     const displayName = (project.displayName || project.name).toLowerCase();
     const projectName = project.name.toLowerCase();
-    
+
     // Search in both display name and actual project name/path
     return displayName.includes(searchLower) || projectName.includes(searchLower);
   });
@@ -492,7 +492,7 @@ function Sidebar({
   const handleProjectSelect = (project) => {
     // Call the original project select handler
     onProjectSelect(project);
-    
+
     // Update TaskMaster context with the selected project
     setCurrentProject(project);
   };
@@ -671,7 +671,7 @@ function Sidebar({
             </Button>
           )}
         </div>
-        
+
         {/* Mobile Header */}
         <div
           className="md:hidden p-3 border-b border-border"
@@ -787,10 +787,10 @@ function Sidebar({
           </div>
         </div>
       )}
-      
+
       {/* Projects List */}
       <ScrollArea className="flex-1 md:px-2 md:py-3 overflow-y-auto overscroll-contain">
-        <div className="md:space-y-1 pb-safe-area-inset-bottom">
+        <div className="md:space-y-6 pb-safe-area-inset-bottom">
           {isLoading ? (
             <div className="text-center py-12 md:py-8 px-4">
               <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center mx-auto mb-4 md:mb-3">
@@ -963,8 +963,8 @@ function Sidebar({
                                 <button
                                   className={cn(
                                     "w-8 h-8 rounded-lg flex items-center justify-center active:scale-90 transition-all duration-150 border",
-                                    isStarred 
-                                      ? "bg-yellow-500/10 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800" 
+                                    isStarred
+                                      ? "bg-yellow-500/10 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800"
                                       : "bg-gray-500/10 dark:bg-gray-900/30 border-gray-200 dark:border-gray-800"
                                   )}
                                   onClick={(e) => {
@@ -976,8 +976,8 @@ function Sidebar({
                                 >
                                   <Star className={cn(
                                     "w-4 h-4 transition-colors",
-                                    isStarred 
-                                      ? "text-yellow-600 dark:text-yellow-400 fill-current" 
+                                    isStarred
+                                      ? "text-yellow-600 dark:text-yellow-400 fill-current"
                                       : "text-gray-600 dark:text-gray-400"
                                   )} />
                                 </button>
@@ -1014,7 +1014,7 @@ function Sidebar({
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Desktop Project Item */}
                     <Button
                       variant="ghost"
@@ -1084,7 +1084,7 @@ function Sidebar({
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {editingProject === project.name ? (
                           <>
@@ -1113,8 +1113,8 @@ function Sidebar({
                             <div
                               className={cn(
                                 "w-6 h-6 opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center rounded cursor-pointer touch:opacity-100",
-                                isStarred 
-                                  ? "hover:bg-yellow-50 dark:hover:bg-yellow-900/20 opacity-100" 
+                                isStarred
+                                  ? "hover:bg-yellow-50 dark:hover:bg-yellow-900/20 opacity-100"
                                   : "hover:bg-accent"
                               )}
                               onClick={(e) => {
@@ -1125,8 +1125,8 @@ function Sidebar({
                             >
                               <Star className={cn(
                                 "w-3 h-3 transition-colors",
-                                isStarred 
-                                  ? "text-yellow-600 dark:text-yellow-400 fill-current" 
+                                isStarred
+                                  ? "text-yellow-600 dark:text-yellow-400 fill-current"
                                   : "text-muted-foreground"
                               )} />
                             </div>
@@ -1223,7 +1223,7 @@ function Sidebar({
                             )}
                             {/* Processing spinner - shows when agent is running */}
                             {isProcessing && (
-                              <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1">
+                              <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1" style={{ left: '-23px', background: '#021028', padding: '6px', borderRadius: '3px' }}>
                                 <div className="w-3 h-3 text-blue-500 animate-spin">
                                   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"></circle>
@@ -1303,7 +1303,7 @@ function Sidebar({
                                 </div>
                               </div>
                             </div>
-                            
+
                             {/* Desktop Session Item */}
                             <div className="hidden md:block">
                               <Button
@@ -1450,7 +1450,7 @@ function Sidebar({
                           )}
                         </Button>
                       )}
-                      
+
                       {/* Sessions - New Session Button */}
                       <div className="md:hidden px-3 pb-2">
                         <button
@@ -1464,11 +1464,11 @@ function Sidebar({
                           {t('sessions.newSession')}
                         </button>
                       </div>
-                      
+
                       <Button
-                        variant="default"
+                        variant="ghost"
                         size="sm"
-                        className="hidden md:flex w-full justify-start gap-2 mt-1 h-8 text-xs font-medium bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
+                        className="hidden md:flex w-full justify-start gap-2 mt-1 h-8 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                         onClick={() => onNewSession(project)}
                       >
                         <Plus className="w-3 h-3" />
@@ -1482,7 +1482,7 @@ function Sidebar({
           )}
         </div>
       </ScrollArea>
-      
+
       {/* Version Update Notification */}
       {updateAvailable && (
         <div className="md:p-2 border-t border-border/50 flex-shrink-0">
@@ -1507,7 +1507,7 @@ function Sidebar({
               </div>
             </Button>
           </div>
-          
+
           {/* Mobile Version Notification */}
           <div className="md:hidden p-3 pb-2">
             <button
@@ -1530,7 +1530,7 @@ function Sidebar({
           </div>
         </div>
       )}
-      
+
       {/* Settings Section */}
       <div className="md:p-2 md:border-t md:border-border flex-shrink-0">
         {/* Mobile Settings */}
@@ -1545,7 +1545,7 @@ function Sidebar({
             <span className="text-lg font-medium text-foreground">{t('actions.settings')}</span>
           </button>
         </div>
-        
+
         {/* Desktop Settings */}
         <Button
           variant="ghost"

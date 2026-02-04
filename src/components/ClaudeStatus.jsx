@@ -57,17 +57,19 @@ function ClaudeStatus({ status, onAbort, isLoading, provider = 'claude' }) {
   const currentSpinner = spinners[animationPhase];
   
   return (
-    <div className="w-full mb-3 sm:mb-6 animate-in slide-in-from-bottom duration-300">
+    <div className="w-full mb-3 sm:mb-6 animate-in slide-in-from-bottom duration-300 relative">
+      {/* Animated spinner - positioned outside */}
+      <span
+        className={cn(
+          "text-base sm:text-xl transition-all duration-500 flex-shrink-0 absolute left-0",
+          animationPhase % 2 === 0 ? "text-blue-400 scale-110" : "text-blue-300"
+        )}
+        style={{ left: '-23px', background: '#021028', padding: '6px', borderRadius: '3px', top: '8px' }}>
+        {currentSpinner}
+      </span>
       <div className="flex items-center justify-between max-w-4xl mx-auto bg-gray-800 dark:bg-gray-900 text-white rounded-lg shadow-lg px-2.5 py-2 sm:px-4 sm:py-3 border border-gray-700 dark:border-gray-800">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Animated spinner */}
-            <span className={cn(
-              "text-base sm:text-xl transition-all duration-500 flex-shrink-0",
-              animationPhase % 2 === 0 ? "text-blue-400 scale-110" : "text-blue-300"
-            )}>
-              {currentSpinner}
-            </span>
 
             {/* Status text - compact for mobile */}
             <div className="flex-1 min-w-0">

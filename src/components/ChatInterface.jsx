@@ -639,15 +639,23 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
                             })()}
                           </div>
                           {message.toolResult && (
-                            <a
-                              href={`#tool-result-${message.toolId}`}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                // Find and toggle the details element for grep results
+                                const detailsEl = document.querySelector(`[data-tool-result="${message.toolId || 'grep-' + index}"]`);
+                                if (detailsEl) {
+                                  detailsEl.open = !detailsEl.open;
+                                }
+                              }}
                               className="flex-shrink-0 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors flex items-center gap-1"
                             >
                               <span>{t('tools.searchResults')}</span>
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
-                            </a>
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1229,13 +1237,20 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
                           // Handle files_with_matches mode or any tool result with filenames array
                           if (toolData.filenames && Array.isArray(toolData.filenames) && toolData.filenames.length > 0) {
                             return (
-                              <div>
-                                <div className="flex items-center gap-2 mb-3">
-                                  <span className="font-medium">
+                              <details
+                                className="group/grep-result"
+                                data-tool-result={message.toolId || `grep-${index}`}
+                                open={autoExpandTools}
+                              >
+                                <summary className="flex items-center gap-2 cursor-pointer hover:bg-green-50/50 dark:hover:bg-green-900/20 -mx-2 px-2 py-1 rounded transition-colors">
+                                  <svg className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0 transition-transform group-open/grep-result:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  <span className="font-medium text-green-800 dark:text-green-200">
                                     Found {toolData.numFiles || toolData.filenames.length} {(toolData.numFiles === 1 || toolData.filenames.length === 1) ? 'file' : 'files'}
                                   </span>
-                                </div>
-                                <div className="space-y-1 max-h-96 overflow-y-auto">
+                                </summary>
+                                <div className="mt-2 space-y-1 max-h-96 overflow-y-auto">
                                   {toolData.filenames.map((filePath, index) => {
                                     const fileName = filePath.split('/').pop();
                                     const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
@@ -1268,7 +1283,21 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
                                     );
                                   })}
                                 </div>
-                              </div>
+                                {/* Raw bash output */}
+                                <div className="mt-3 pt-3 border-t border-green-200/30 dark:border-green-800/30">
+                                  <details className="group/raw-output">
+                                    <summary className="flex items-center gap-2 cursor-pointer text-xs text-green-600/70 dark:text-green-400/70 hover:text-green-600 dark:hover:text-green-400 transition-colors">
+                                      <svg className="w-3 h-3 transition-transform group-open/raw-output:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                      </svg>
+                                      View raw output
+                                    </summary>
+                                    <div className="mt-2 bg-gray-900 dark:bg-gray-950 text-gray-100 rounded-lg p-3 font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto">
+                                      <pre className="whitespace-pre-wrap break-words">{content}</pre>
+                                    </div>
+                                  </details>
+                                </div>
+                              </details>
                             );
                           }
                         }
