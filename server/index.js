@@ -1063,29 +1063,40 @@ function handleShellConnection(ws) {
 
                 const existingSession = isLoginCommand ? null : ptySessionsMap.get(ptySessionKey);
                 if (existingSession) {
-                    console.log('♻️  Reconnecting to existing PTY session:', ptySessionKey);
-                    shellProcess = existingSession.pty;
+                    // Check if the existing session is actually alive
+                    const isAlive = existingSession.pty && existingSession.pty.pid &&
+                                    !existingSession.pty.killed &&
+                                    (existingSession.pty.exitCode === null || existingSession.pty.exitCode === undefined);
 
-                    clearTimeout(existingSession.timeoutId);
+                    if (!isAlive) {
+                        console.log('🗑️  Existing session is dead, cleaning up:', ptySessionKey);
+                        if (existingSession.timeoutId) clearTimeout(existingSession.timeoutId);
+                        ptySessionsMap.delete(ptySessionKey);
+                    } else {
+                        console.log('♻️  Reconnecting to existing PTY session:', ptySessionKey);
+                        shellProcess = existingSession.pty;
 
-                    ws.send(JSON.stringify({
-                        type: 'output',
-                        data: `\x1b[36m[Reconnected to existing session]\x1b[0m\r\n`
-                    }));
+                        clearTimeout(existingSession.timeoutId);
 
-                    if (existingSession.buffer && existingSession.buffer.length > 0) {
-                        console.log(`📜 Sending ${existingSession.buffer.length} buffered messages`);
-                        existingSession.buffer.forEach(bufferedData => {
-                            ws.send(JSON.stringify({
-                                type: 'output',
-                                data: bufferedData
-                            }));
-                        });
+                        ws.send(JSON.stringify({
+                            type: 'output',
+                            data: `\x1b[36m[Reconnected to existing session]\x1b[0m\r\n`
+                        }));
+
+                        if (existingSession.buffer && existingSession.buffer.length > 0) {
+                            console.log(`📜 Sending ${existingSession.buffer.length} buffered messages`);
+                            existingSession.buffer.forEach(bufferedData => {
+                                ws.send(JSON.stringify({
+                                    type: 'output',
+                                    data: bufferedData
+                                }));
+                            });
+                        }
+
+                        existingSession.ws = ws;
+
+                        return;
                     }
-
-                    existingSession.ws = ws;
-
-                    return;
                 }
 
                 console.log('[INFO] Starting shell in:', projectPath);
@@ -1158,7 +1169,7 @@ function handleShellConnection(ws) {
                     console.log('🔧 Executing shell command:', shellCommand);
 
                     // Use appropriate shell based on platform
-                    const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
+                    const shell = os.platform() === 'win32' ? 'powershell.exe' : '/bin/zsh';
                     const shellArgs = os.platform() === 'win32' ? ['-Command', shellCommand] : ['-c', shellCommand];
 
                     // Use terminal dimensions from client if provided, otherwise use defaults
@@ -1166,22 +1177,47 @@ function handleShellConnection(ws) {
                     const termRows = data.rows || 24;
                     console.log('📐 Using terminal dimensions:', termCols, 'x', termRows);
 
-                    shellProcess = pty.spawn(shell, shellArgs, {
-                        name: 'xterm-256color',
-                        cols: termCols,
-                        rows: termRows,
-                        cwd: os.homedir(),
-                        env: {
-                            ...process.env,
-                            TERM: 'xterm-256color',
-                            COLORTERM: 'truecolor',
-                            FORCE_COLOR: '3',
-                            // Override browser opening commands to echo URL for detection
-                            BROWSER: os.platform() === 'win32' ? 'echo "OPEN_URL:"' : 'echo "OPEN_URL:"'
-                        }
-                    });
-
-                    console.log('🟢 Shell process started with PTY, PID:', shellProcess.pid);
+                    // Try PTY spawn first, fallback to regular spawn if it fails
+                    try {
+                        shellProcess = pty.spawn(shell, shellArgs, {
+                            name: 'xterm-256color',
+                            cols: termCols,
+                            rows: termRows,
+                            cwd: os.homedir(),
+                            env: {
+                                ...process.env,
+                                TERM: 'xterm-256color',
+                                COLORTERM: 'truecolor',
+                                FORCE_COLOR: '3',
+                                // Override browser opening commands to echo URL for detection
+                                BROWSER: os.platform() === 'win32' ? 'echo "OPEN_URL:"' : 'echo "OPEN_URL:"'
+                            }
+                        });
+                        console.log('🟢 Shell process started with PTY, PID:', shellProcess.pid);
+                    } catch (ptyError) {
+                        console.warn('⚠️ PTY spawn failed, falling back to regular spawn:', ptyError.message);
+                        // Fallback to regular spawn without PTY
+                        shellProcess = spawn(shell, shellArgs, {
+                            cwd: os.homedir(),
+                            env: {
+                                ...process.env,
+                                TERM: 'xterm-256color',
+                                COLORTERM: 'truecolor',
+                                FORCE_COLOR: '3',
+                                BROWSER: os.platform() === 'win32' ? 'echo "OPEN_URL:"' : 'echo "OPEN_URL:"'
+                            }
+                        });
+                        // Add PTY-like interface for compatibility
+                        shellProcess.resize = () => {};
+                        shellProcess.write = (data) => {
+                            shellProcess.stdin.write(data);
+                        };
+                        shellProcess.onData = (callback) => {
+                            shellProcess.stdout.on('data', callback);
+                            shellProcess.stderr.on('data', callback);
+                        };
+                        console.log('🟡 Shell process started with regular spawn, PID:', shellProcess.pid);
+                    }
 
                     ptySessionsMap.set(ptySessionKey, {
                         pty: shellProcess,
@@ -1249,21 +1285,41 @@ function handleShellConnection(ws) {
                     });
 
                     // Handle process exit
-                    shellProcess.onExit((exitCode) => {
-                        console.log('🔚 Shell process exited with code:', exitCode.exitCode, 'signal:', exitCode.signal);
-                        const session = ptySessionsMap.get(ptySessionKey);
-                        if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
-                            session.ws.send(JSON.stringify({
-                                type: 'output',
-                                data: `\r\n\x1b[33mProcess exited with code ${exitCode.exitCode}${exitCode.signal ? ` (${exitCode.signal})` : ''}\x1b[0m\r\n`
-                            }));
-                        }
-                        if (session && session.timeoutId) {
-                            clearTimeout(session.timeoutId);
-                        }
-                        ptySessionsMap.delete(ptySessionKey);
-                        shellProcess = null;
-                    });
+                    if (shellProcess.onExit) {
+                        // PTY provides onExit method
+                        shellProcess.onExit((exitCode) => {
+                            console.log('🔚 Shell process exited with code:', exitCode.exitCode, 'signal:', exitCode.signal);
+                            const session = ptySessionsMap.get(ptySessionKey);
+                            if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
+                                session.ws.send(JSON.stringify({
+                                    type: 'output',
+                                    data: `\r\n\x1b[33mProcess exited with code ${exitCode.exitCode}${exitCode.signal ? ` (${exitCode.signal})` : ''}\x1b[0m\r\n`
+                                }));
+                            }
+                            if (session && session.timeoutId) {
+                                clearTimeout(session.timeoutId);
+                            }
+                            ptySessionsMap.delete(ptySessionKey);
+                            shellProcess = null;
+                        });
+                    } else {
+                        // Regular spawn uses 'close' event
+                        shellProcess.on('close', (code, signal) => {
+                            console.log('🔚 Shell process exited with code:', code, 'signal:', signal);
+                            const session = ptySessionsMap.get(ptySessionKey);
+                            if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
+                                session.ws.send(JSON.stringify({
+                                    type: 'output',
+                                    data: `\r\n\x1b[33mProcess exited with code ${code}${signal ? ` (${signal})` : ''}\x1b[0m\r\n`
+                                }));
+                            }
+                            if (session && session.timeoutId) {
+                                clearTimeout(session.timeoutId);
+                            }
+                            ptySessionsMap.delete(ptySessionKey);
+                            shellProcess = null;
+                        });
+                    }
 
                 } catch (spawnError) {
                     console.error('[ERROR] Error spawning process:', spawnError);
